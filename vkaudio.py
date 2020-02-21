@@ -36,34 +36,42 @@ class AudioList:
                             headers=self.headers, cookies=self.cookie)
         res = json.loads(res.text)
         buffList = res['payload'][1][1]['playlist']['list']
-        self.list = [Audio(audio[3], audio[4], audio[5], audio[2], [audio[1], audio[0], audio[13]]) for audio in
+        self.list = [Audio(audio[4] + ("" if audio[16] == "" else f" ({audio[16]})"), audio[3], audio[5], audio[2], [audio[1], audio[0], audio[13]]) for audio in
                      buffList]
         self.reload_audio()
 
     def reload_audio(self, num=-1):
-        buffList = self.list
+        buffList = self.list.copy()
         if num >= 0:
             buffList = [self.list[num]]
 
         ids = ""
         i = 0
         resList = []
+        restrictList = []
         for audio in buffList:
             buffIds = str(audio.ids[2]).split('/')
             buffIds = [i for i in buffIds if i != '']
+            if len(buffIds) != 3:
+                self.list.remove(audio)
+                restrictList.append(audio)
+                continue
             ids += str(audio.ids[0]) + '_' + str(audio.ids[1]) + '_' + buffIds[1] + '_' + buffIds[2]
             ids += ','
             i += 1
-            if i % 4 == 0 or i == len(buffList):
+            if i % 4 == 0 or i == len(buffList) - len(restrictList):
                 self.reqReloadParams['ids'] = ids[:-1]
                 res = requests.post("https://vk.com/al_audio.php", data=urlParser.urlencode(self.reqReloadParams),
                                     headers=self.headers, cookies=self.cookie)
                 ids = ""
                 resList.extend(json.loads(res.text)['payload'][1][0])
 
+        for audio in restrictList:
+            buffList.remove(audio)
+
         for i in range(len(buffList)):
-            buffList[i].name = resList[i][3]
-            buffList[i].group = resList[i][4]
+            buffList[i].name = resList[i][4] + ("" if resList[i][16] == "" else f" ({resList[i][16]})")
+            buffList[i].group = resList[i][3]
             buffList[i].duration = resList[i][5]
             buffList[i].link = resList[i][2]
             buffList[i].ids[0] = resList[i][1]
@@ -86,13 +94,20 @@ class AudioList:
         os.remove("buff")
 
         for i in range(len(buffList)):
-            index = links[i].find('/index.m3u8')
-            links[i] = links[i][:index] + '.mp3' + links[i][index + 11:-1]
-            parts = links[i].split('/')
-            parts.pop(5)
-            links[i] = ""
-            for part in parts:
-                links[i] += part + '/'
+            if links[i].find('.mp3?extra=') == -1:
+                index = links[i].find('/index.m3u8')
+                links[i] = links[i][:index] + '.mp3' + links[i][index + 11:-1]
+                parts = links[i].split('/')
+                for j in range(len(parts)):
+                    if parts[j].find('.mp3?extra=') != -1:
+                        if parts[j - 1] == 'audios':
+                            parts.pop(j - 2)
+                        else:
+                            parts.pop(j - 1)
+                        break
+                links[i] = ""
+                for part in parts:
+                    links[i] += part + '/'
 
             buffList[i].link = links[i][:-1]
 
